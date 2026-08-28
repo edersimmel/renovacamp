@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://renovacamp.com.br/sitemap.xml
