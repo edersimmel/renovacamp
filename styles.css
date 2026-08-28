@@ -830,3 +830,270 @@ button,input,select,textarea{font:inherit}
     padding:0 14px !important;
   }
 }
+
+
+/* ===== MOBILE — estabilidade do vídeo scroll ===== */
+@media(max-width:900px){
+  .hero-sticky,
+  .services-scroll-sticky{
+    height:100vh;
+    height:100svh;
+  }
+
+  .hero-bg-video,
+  .services-scroll-video{
+    -webkit-transform:translateZ(0);
+    backface-visibility:hidden;
+  }
+}
+
+/* ===== MOBILE — VÍDEO DE SERVIÇOS INTEIRO NA TELA ===== */
+@media(max-width:900px){
+  .services-scroll-sticky{
+    background:#111;
+  }
+
+  .services-scroll-video{
+    width:100%;
+    height:100%;
+    object-fit:contain !important;
+    object-position:center center !important;
+    transform:scale(.95) !important;
+  }
+
+  /* Fundo escuro integra as áreas que sobram nas laterais/topo */
+  .services-scroll-overlay{
+    background:
+      linear-gradient(180deg,
+        rgba(8,8,8,.24) 0%,
+        rgba(8,8,8,.03) 44%,
+        rgba(8,8,8,.48) 100%);
+  }
+}
+
+@media(max-width:620px){
+  .services-scroll-video{
+    object-fit:contain !important;
+    transform:scale(.95) !important;
+  }
+}
+
+
+
+/* ===== MOBILE — HERO SEM DISTORÇÃO / PROPORÇÃO NATURAL ===== */
+@media(max-width:900px){
+  .hero-sticky{
+    background:
+      radial-gradient(ellipse at 50% 45%, rgba(91,69,49,.24), transparent 58%),
+      linear-gradient(180deg,#151311 0%,#111 100%);
+  }
+
+  /*
+    Mantém a proporção original do vídeo.
+    Ele fica um pouco maior que a tela (118%) para evitar aparência de faixa,
+    mas não é esticado verticalmente.
+  */
+  .hero-bg-video{
+    inset:auto !important;
+    top:47% !important;
+    left:50% !important;
+    width:118% !important;
+    height:auto !important;
+    max-width:none !important;
+    aspect-ratio:16 / 9;
+    object-fit:contain !important;
+    object-position:center center !important;
+    transform:translate(-50%,-50%) !important;
+    filter:saturate(.95) contrast(1.03) brightness(.88) !important;
+
+    /* Faz as bordas superior/inferior se fundirem com o fundo */
+    -webkit-mask-image:linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0,0,0,.55) 10%,
+      #000 22%,
+      #000 78%,
+      rgba(0,0,0,.55) 90%,
+      transparent 100%
+    );
+    mask-image:linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0,0,0,.55) 10%,
+      #000 22%,
+      #000 78%,
+      rgba(0,0,0,.55) 90%,
+      transparent 100%
+    );
+  }
+
+  .hero-overlay{
+    background:
+      linear-gradient(180deg,
+        rgba(8,8,8,.48) 0%,
+        rgba(8,8,8,.16) 28%,
+        rgba(8,8,8,.12) 52%,
+        rgba(8,8,8,.42) 76%,
+        rgba(8,8,8,.76) 100%),
+      linear-gradient(90deg,
+        rgba(8,8,8,.34) 0%,
+        rgba(8,8,8,.08) 68%,
+        rgba(8,8,8,.10) 100%);
+  }
+
+  .hero-shell{
+    padding-top:116px;
+    padding-bottom:56px;
+    display:flex;
+    align-items:flex-start;
+  }
+
+  .hero-copy{
+    width:100%;
+    max-width:none;
+  }
+
+  .hero-kicker{
+    margin-bottom:18px;
+    font-size:10px;
+    letter-spacing:.17em;
+  }
+
+  .hero-copy h1{
+    max-width:340px;
+    font-size:clamp(46px,13vw,59px);
+    line-height:.90;
+    letter-spacing:-.045em;
+    text-shadow:0 8px 24px rgba(0,0,0,.30);
+  }
+
+  .hero-lead{
+    max-width:310px;
+    margin-top:24px;
+    font-size:14px;
+    line-height:1.58;
+    color:rgba(255,255,255,.90);
+    text-shadow:0 4px 16px rgba(0,0,0,.38);
+  }
+
+  .hero-actions{
+    margin-top:26px;
+    gap:14px;
+    align-items:flex-start;
+  }
+
+  .hero-actions .button-primary{
+    min-height:52px;
+    padding:0 22px;
+    font-size:10px;
+  }
+
+  .hero-actions .button-text{
+    padding-left:0;
+  }
+
+  .hero-phase{
+    bottom:24px;
+  }
+}
+
+@media(max-width:620px){
+  .hero-bg-video{
+    top:46% !important;
+    width:122% !important;
+  }
+
+  .hero-shell{
+    padding:110px 22px 52px;
+  }
+
+  .hero-copy h1{
+    max-width:325px;
+    font-size:clamp(44px,12.7vw,55px);
+  }
+
+  .hero-lead{
+    max-width:292px;
+    font-size:13.5px;
+  }
+}
+
+/* ===== MOBILE — PROCESSO MAIS COMPACTO ===== */
+@media(max-width:720px){
+  .process-list li{
+    grid-template-columns:36px minmax(0,1fr);
+    gap:14px;
+    padding:24px 0;
+    align-items:start;
+  }
+
+  .process-list li>span{
+    padding-top:4px;
+    font-size:9px;
+    letter-spacing:.10em;
+  }
+
+  .process-list strong{
+    font-size:26px;
+    line-height:1.08;
+  }
+
+  .process-list p{
+    margin-top:8px;
+    font-size:14px;
+    line-height:1.6;
+  }
+}
+
+@media(max-width:420px){
+  .process-list li{
+    grid-template-columns:30px minmax(0,1fr);
+    gap:12px;
+  }
+
+  .process-list strong{
+    font-size:24px;
+  }
+}
+
+/* ===== MOBILE — HERO SEM GAP / PRÓXIMA SEÇÃO MAIS RÁPIDA ===== */
+@media(max-width:900px){
+  .hero-sticky{
+    height:100vh !important;
+    height:100svh !important;
+    min-height:0 !important;
+  }
+
+  /* Mantém o sticky ocupando a tela inteira, mas encurta o tempo de scroll. */
+  .hero-scroll{
+    height:190vh !important;
+  }
+
+  .hero-shell{
+    height:100% !important;
+    padding-bottom:44px !important;
+  }
+
+  .hero-bottom-note{
+    bottom:18px !important;
+  }
+}
+
+@media(max-width:620px){
+  .hero-sticky{
+    height:100vh !important;
+    height:100svh !important;
+  }
+
+  .hero-scroll{
+    height:178vh !important;
+  }
+
+  .hero-shell{
+    padding-bottom:40px !important;
+  }
+
+  .hero-bottom-note{
+    bottom:16px !important;
+  }
+}
