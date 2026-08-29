@@ -5,6 +5,7 @@ const heroSection=document.querySelector('.hero-scroll');
 const heroVideo=document.getElementById('hero-video');
 const progressBar=document.getElementById('hero-progress-bar');
 const prefersReduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isMobileViewport=window.matchMedia('(max-width: 900px)');
 
 const updateHeader=()=>header.classList.toggle('scrolled',window.scrollY>28);
 updateHeader();
@@ -34,7 +35,12 @@ function measureHeroProgress(){
 }
 
 function updateHeroTarget(){
-  heroTargetProgress=measureHeroProgress();
+  const rawProgress=measureHeroProgress();
+
+  // Mobile agora usa progresso linear. A velocidade é controlada pela
+  // distância maior da seção, evitando aceleração no fim do gesto.
+  heroTargetProgress=rawProgress;
+
   if(heroDuration){
     heroTargetTime=heroTargetProgress*heroDuration;
   }
@@ -44,13 +50,17 @@ function updateHeroTarget(){
 }
 
 function animateHeroScrub(now){
-  // Smooth the visual progress and the video time independently.
-  heroVisualProgress += (heroTargetProgress-heroVisualProgress)*0.08;
+  // Mobile usa uma interpolação bem mais lenta para impedir que
+  // um único swipe avance vários segundos do vídeo.
+  const visualEase=isMobileViewport.matches ? 0.045 : 0.08;
+  const videoEase=isMobileViewport.matches ? 0.055 : 0.10;
+
+  heroVisualProgress += (heroTargetProgress-heroVisualProgress)*visualEase;
   document.documentElement.style.setProperty('--hero-progress',heroVisualProgress.toFixed(4));
   if(progressBar) progressBar.style.height=`${heroVisualProgress*100}%`;
 
   if(heroVideo && heroDuration){
-    heroVirtualTime += (heroTargetTime-heroVirtualTime)*0.10;
+    heroVirtualTime += (heroTargetTime-heroVirtualTime)*videoEase;
 
     // Limit currentTime writes to about 30 fps to avoid browser seek thrashing.
     if(now-lastHeroSeek>30){
@@ -159,21 +169,26 @@ form?.addEventListener('submit',(e)=>{
 
 
 // =========================================================
-// SERVIÇOS — vídeo + descrições controlados por scroll
+// SERVIÇOS — desktop por vídeo / mobile por sequência de frames
 // =========================================================
 const servicesSection=document.querySelector('.services-scroll');
 const servicesVideo=document.getElementById('services-video');
+const servicesCanvas=document.getElementById('services-mobile-canvas');
+const servicesCanvasCtx=servicesCanvas?.getContext('2d');
 const servicesCopies=[...document.querySelectorAll('[data-service-copy]')];
 const servicesProgressBar=document.getElementById('services-progress-bar');
+const isMobileServices=window.matchMedia('(max-width: 900px)');
 
-let servicesTargetProgress=0;
-let servicesVisualProgress=0;
-let servicesTargetTime=0;
-let servicesVirtualTime=0;
-let servicesDuration=16.02; // fallback do arquivo atual
+const SERVICES_MOBILE_FRAME_COUNT=96;
+const SERVICES_MOBILE_FRAME_PATH=(n)=>`assets/services-mobile-frames/frame-${String(n).padStart(3,'0')}.webp`;
+
+let servicesDuration=16;
+let servicesProgress=0;
 let servicesRaf=0;
-let lastServicesSeek=0;
 let activeServiceIndex=-999;
+let servicesFramesStarted=false;
+let currentServicesFrame=-1;
+const servicesFrames=new Array(SERVICES_MOBILE_FRAME_COUNT+1);
 
 function measureServicesProgress(){
   if(!servicesSection) return 0;
@@ -182,51 +197,37 @@ function measureServicesProgress(){
   return clamp((-rect.top)/total,0,1);
 }
 
-function getServicesDuration(){
-  if(servicesVideo){
-    const d=Number(servicesVideo.duration);
-    if(Number.isFinite(d) && d>0){
-      servicesDuration=d;
-      return d;
-    }
-  }
-  return servicesDuration || 16.02;
-}
-
 function servicesTimeFromProgress(progress){
   const p=clamp(progress,0,1);
-  const duration=getServicesDuration();
+  const duration=Math.max(servicesDuration||16,0);
   const end=Math.max(duration-.04,0);
 
-  if(p<=.14){
-    return (p/.14)*Math.min(5.5,end);
-  }
+  if(p<=.14) return (p/.14)*Math.min(5.5,end);
 
   if(p<=.54){
-    const start=Math.min(5.5,end);
-    const finish=Math.min(9.7,end);
-    return start+((p-.14)/.40)*(finish-start);
+    const a=Math.min(5.5,end);
+    const b=Math.min(9.7,end);
+    return a+((p-.14)/.40)*(b-a);
   }
 
   if(p<=.70){
-    const start=Math.min(9.7,end);
-    const finish=Math.min(13.5,end);
-    return start+((p-.54)/.16)*(finish-start);
+    const a=Math.min(9.7,end);
+    const b=Math.min(13.5,end);
+    return a+((p-.54)/.16)*(b-a);
   }
 
   if(p<=.94){
-    const start=Math.min(13.5,end);
-    const finish=Math.max(end-.20,start);
-    return start+((p-.70)/.24)*(finish-start);
+    const a=Math.min(13.5,end);
+    const b=Math.max(end-.20,a);
+    return a+((p-.70)/.24)*(b-a);
   }
 
-  const holdStart=Math.max(end-.20,0);
-  return holdStart+((p-.94)/.06)*(end-holdStart);
+  const hold=Math.max(end-.20,0);
+  return hold+((p-.94)/.06)*(end-hold);
 }
 
 function serviceIndexFromProgress(progress){
   const p=clamp(progress,0,1);
-
   if(p<.14) return -1;
   if(p<.54) return Math.min(5,Math.floor(((p-.14)/.40)*6));
   if(p<.70) return 5;
@@ -243,119 +244,146 @@ function setActiveService(index){
   });
 }
 
-function safeSetServicesTime(time){
-  if(!servicesVideo || servicesVideo.readyState<1) return false;
+function drawServicesFrame(frameNumber){
+  if(!servicesCanvasCtx || !servicesCanvas) return;
 
-  const duration=getServicesDuration();
-  const nextTime=clamp(time,0,Math.max(duration-.04,0));
+  const n=clamp(Math.round(frameNumber),1,SERVICES_MOBILE_FRAME_COUNT);
+  const img=servicesFrames[n];
 
-  try{
-    if(Math.abs(servicesVideo.currentTime-nextTime)>.015){
-      if(typeof servicesVideo.fastSeek==='function' && Math.abs(servicesVideo.currentTime-nextTime)>1.2){
-        servicesVideo.fastSeek(nextTime);
-      }else{
-        servicesVideo.currentTime=nextTime;
-      }
+  if(img?.complete && img.naturalWidth){
+    if(currentServicesFrame===n) return;
+    currentServicesFrame=n;
+
+    servicesCanvasCtx.clearRect(0,0,servicesCanvas.width,servicesCanvas.height);
+    servicesCanvasCtx.drawImage(img,0,0,servicesCanvas.width,servicesCanvas.height);
+    return;
+  }
+
+  // Garante que o frame solicitado tenha prioridade.
+  loadServicesFrame(n,true);
+}
+
+function loadServicesFrame(n,priority=false){
+  if(n<1 || n>SERVICES_MOBILE_FRAME_COUNT) return;
+  if(servicesFrames[n]) return;
+
+  const img=new Image();
+  servicesFrames[n]=img;
+  img.decoding='async';
+  img.src=SERVICES_MOBILE_FRAME_PATH(n);
+
+  img.onload=()=>{
+    const target=1+Math.round(servicesProgress*(SERVICES_MOBILE_FRAME_COUNT-1));
+    if(n===target || priority){
+      drawServicesFrame(target);
     }
-    return true;
-  }catch(e){
-    return false;
+  };
+}
+
+function preloadServicesFrames(){
+  if(servicesFramesStarted || !isMobileServices.matches) return;
+  servicesFramesStarted=true;
+
+  // Primeiros frames imediatos para a entrada da seção.
+  for(let n=1;n<=12;n++) loadServicesFrame(n);
+
+  // O restante entra gradualmente para não travar a rede do celular.
+  let n=13;
+  const batch=()=>{
+    const end=Math.min(n+9,SERVICES_MOBILE_FRAME_COUNT+1);
+    for(;n<end;n++) loadServicesFrame(n);
+    if(n<=SERVICES_MOBILE_FRAME_COUNT){
+      setTimeout(batch,70);
+    }
+  };
+  setTimeout(batch,80);
+}
+
+function renderServicesScroll(){
+  servicesRaf=0;
+  if(!servicesSection) return;
+
+  servicesProgress=measureServicesProgress();
+
+  if(servicesProgressBar){
+    servicesProgressBar.style.height=`${servicesProgress*100}%`;
+  }
+
+  setActiveService(serviceIndexFromProgress(servicesProgress));
+
+  if(isMobileServices.matches){
+    preloadServicesFrames();
+    const frame=1+servicesProgress*(SERVICES_MOBILE_FRAME_COUNT-1);
+    drawServicesFrame(frame);
+    return;
+  }
+
+  // Desktop continua usando o MP4 porque já está funcionando corretamente.
+  if(servicesVideo && servicesVideo.readyState>=1){
+    const t=servicesTimeFromProgress(servicesProgress);
+    try{
+      if(Math.abs(servicesVideo.currentTime-t)>.01){
+        servicesVideo.currentTime=t;
+      }
+    }catch(e){}
   }
 }
 
 function updateServicesTarget(){
-  if(!servicesSection) return;
-
-  servicesTargetProgress=measureServicesProgress();
-  servicesTargetTime=servicesTimeFromProgress(servicesTargetProgress);
-  setActiveService(serviceIndexFromProgress(servicesTargetProgress));
-
   if(!servicesRaf){
-    servicesRaf=requestAnimationFrame(animateServicesScrub);
-  }
-}
-
-function animateServicesScrub(now){
-  // Zera primeiro para que qualquer falha de mídia nunca congele
-  // permanentemente o requestAnimationFrame.
-  servicesRaf=0;
-
-  servicesVisualProgress+=(servicesTargetProgress-servicesVisualProgress)*.14;
-
-  if(servicesProgressBar){
-    servicesProgressBar.style.height=`${servicesVisualProgress*100}%`;
-  }
-
-  servicesVirtualTime+=(servicesTargetTime-servicesVirtualTime)*.22;
-
-  if(now-lastServicesSeek>28){
-    safeSetServicesTime(servicesVirtualTime);
-    lastServicesSeek=now;
-  }
-
-  const progressMoving=Math.abs(servicesTargetProgress-servicesVisualProgress)>.0008;
-  const timeMoving=Math.abs(servicesTargetTime-servicesVirtualTime)>.012;
-
-  if(progressMoving || timeMoving){
-    servicesRaf=requestAnimationFrame(animateServicesScrub);
-  }else{
-    servicesVisualProgress=servicesTargetProgress;
-    servicesVirtualTime=servicesTargetTime;
-
-    if(servicesProgressBar){
-      servicesProgressBar.style.height=`${servicesVisualProgress*100}%`;
-    }
-
-    safeSetServicesTime(servicesVirtualTime);
+    servicesRaf=requestAnimationFrame(renderServicesScroll);
   }
 }
 
 function initServicesVideo(){
-  if(!servicesVideo) return;
+  if(!servicesVideo || isMobileServices.matches) return;
 
   servicesVideo.muted=true;
   servicesVideo.playsInline=true;
-  servicesVideo.setAttribute('playsinline','');
-  servicesVideo.setAttribute('webkit-playsinline','');
+  servicesVideo.pause();
 
-  getServicesDuration();
-
-  servicesTargetProgress=measureServicesProgress();
-  servicesVisualProgress=servicesTargetProgress;
-  servicesTargetTime=servicesTimeFromProgress(servicesTargetProgress);
-  servicesVirtualTime=servicesTargetTime;
-
-  setActiveService(serviceIndexFromProgress(servicesTargetProgress));
-
-  if(servicesProgressBar){
-    servicesProgressBar.style.height=`${servicesVisualProgress*100}%`;
+  const d=Number(servicesVideo.duration);
+  if(Number.isFinite(d) && d>0){
+    servicesDuration=d;
   }
 
-  safeSetServicesTime(servicesVirtualTime);
-  updateServicesTarget();
+  renderServicesScroll();
 }
 
 if(servicesVideo){
-  servicesVideo.pause();
   servicesVideo.muted=true;
   servicesVideo.playsInline=true;
   servicesVideo.setAttribute('playsinline','');
   servicesVideo.setAttribute('webkit-playsinline','');
-  servicesVideo.preload='auto';
+  servicesVideo.preload=isMobileServices.matches ? 'none' : 'metadata';
 
-  // Inicializa em qualquer evento útil; não depende de um único loadedmetadata.
-  ['loadedmetadata','durationchange','canplay','progress'].forEach(evt=>{
-    servicesVideo.addEventListener(evt,initServicesVideo);
-  });
+  if(!isMobileServices.matches){
+    servicesVideo.addEventListener('loadedmetadata',initServicesVideo);
+    servicesVideo.addEventListener('canplay',initServicesVideo,{once:true});
 
-  if(servicesVideo.readyState>=1){
-    initServicesVideo();
-  }else{
-    try{ servicesVideo.load(); }catch(e){}
+    if(servicesVideo.readyState>=1){
+      initServicesVideo();
+    }else{
+      try{ servicesVideo.load(); }catch(e){}
+    }
   }
 }
 
-updateServicesTarget();
+if(servicesSection && 'IntersectionObserver' in window){
+  const servicesWarmup=new IntersectionObserver((entries)=>{
+    if(entries.some(entry=>entry.isIntersecting)){
+      if(isMobileServices.matches){
+        preloadServicesFrames();
+      }else if(servicesVideo && servicesVideo.readyState===0){
+        try{ servicesVideo.load(); }catch(e){}
+      }
+      servicesWarmup.disconnect();
+    }
+  },{rootMargin:'160% 0px'});
+  servicesWarmup.observe(servicesSection);
+}
+
+renderServicesScroll();
 window.addEventListener('scroll',updateServicesTarget,{passive:true});
 window.addEventListener('resize',updateServicesTarget);
 
@@ -383,7 +411,7 @@ function unlockScrollVideos(){
   if(scrollVideosUnlocked) return;
   scrollVideosUnlocked=true;
 
-  [heroVideo,servicesVideo].forEach(video=>{
+  [heroVideo].forEach(video=>{
     if(!video) return;
 
     video.muted=true;
@@ -448,7 +476,7 @@ window.addEventListener('orientationchange',()=>{
 // Reativa os alvos quando a página volta do cache do navegador (bfcache).
 window.addEventListener('pageshow',()=>{
   if(heroVideo && !heroDuration) initHeroVideo();
-  if(servicesVideo && !servicesDuration) initServicesVideo();
+  if(servicesVideo && !isMobileServices.matches) initServicesVideo();
   updateHeroTarget();
   updateServicesTarget();
 });

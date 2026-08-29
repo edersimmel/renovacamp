@@ -108,3 +108,17 @@ Não serão mais criados arquivos `styles-vX.css` ou `script-vX.js`.
 - Serviços: adicionado CTA final antes da saída da seção:
   “Não encontrou o que procurava? Entre em contato. Temos a solução perfeita para sua necessidade!”
 - Mantidos somente `styles.css` e `script.js`.
+
+
+## Ajuste mobile estável
+- Hero mobile: progressão desacelerada com curva de progresso e interpolação específica para touch.
+- Serviços mobile: não depende mais de seek de vídeo.
+- No celular a seção de serviços usa uma sequência de 96 frames WebP controlados pelo scroll.
+- Desktop continua usando `assets/services-scroll.mp4`.
+
+
+## Ajuste Hero mobile — velocidade
+- Desktop mantido sem alterações.
+- Serviços desktop e mobile mantidos sem alterações.
+- Hero mobile aumentado para 260svh (250svh em celulares menores).
+- Progresso mobile do Hero passou a ser linear para não acelerar no final do swipe.

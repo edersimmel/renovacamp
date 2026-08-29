@@ -1056,7 +1056,35 @@ button,input,select,textarea{font:inherit}
   }
 }
 
-/* ===== MOBILE — HERO CURTO / PRÓXIMA SEÇÃO ENTRA RÁPIDO ===== */
+/* ===== MOBILE — SERVIÇOS ESTÁVEIS COM SEQUÊNCIA DE FRAMES ===== */
+.services-mobile-canvas{
+  display:none;
+}
+
+@media(max-width:900px){
+  .services-scroll-video{
+    display:none !important;
+  }
+
+  .services-mobile-canvas{
+    display:block;
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:95%;
+    height:auto;
+    max-width:none;
+    aspect-ratio:16 / 9;
+    transform:translate(-50%,-50%);
+    z-index:0;
+  }
+
+  .services-scroll-sticky{
+    background:#111;
+  }
+}
+
+/* ===== MOBILE — HERO MAIS LENTO / VELOCIDADE CONSTANTE ===== */
 @media(max-width:900px){
   .hero-sticky{
     height:100vh !important;
@@ -1065,13 +1093,13 @@ button,input,select,textarea{font:inherit}
   }
 
   /*
-    O sticky ocupa a tela inteira, porém a área EXTRA de scroll
-    é curta: 35svh. Assim o vídeo ainda responde ao scroll e
-    a próxima seção começa a subir logo em seguida.
+    Antes: 175svh = apenas 75svh de scroll efetivo.
+    Agora: 260svh = 160svh de scroll efetivo.
+    Resultado: aproximadamente 2,1x mais distância para o mesmo vídeo.
   */
   .hero-scroll{
-    height:135vh !important;
-    height:135svh !important;
+    height:260vh !important;
+    height:260svh !important;
   }
 
   .hero-shell{
@@ -1085,9 +1113,12 @@ button,input,select,textarea{font:inherit}
 }
 
 @media(max-width:620px){
+  /*
+    Celulares menores: 250svh = 150svh de scroll efetivo.
+  */
   .hero-scroll{
-    height:132vh !important;
-    height:132svh !important;
+    height:250vh !important;
+    height:250svh !important;
   }
 
   .hero-shell{
