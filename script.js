@@ -170,7 +170,7 @@ let servicesTargetProgress=0;
 let servicesVisualProgress=0;
 let servicesTargetTime=0;
 let servicesVirtualTime=0;
-let servicesDuration=0;
+let servicesDuration=16.02; // fallback do arquivo atual
 let servicesRaf=0;
 let lastServicesSeek=0;
 let activeServiceIndex=-999;
@@ -182,41 +182,44 @@ function measureServicesProgress(){
   return clamp((-rect.top)/total,0,1);
 }
 
-// The video intentionally moves faster during the folder/page transitions
-// and much slower while each group of six services is visible.
+function getServicesDuration(){
+  if(servicesVideo){
+    const d=Number(servicesVideo.duration);
+    if(Number.isFinite(d) && d>0){
+      servicesDuration=d;
+      return d;
+    }
+  }
+  return servicesDuration || 16.02;
+}
+
 function servicesTimeFromProgress(progress){
   const p=clamp(progress,0,1);
-  if(!servicesDuration) return 0;
+  const duration=getServicesDuration();
+  const end=Math.max(duration-.04,0);
 
-  const end=Math.max(servicesDuration-.02,0);
-
-  // 0–14%: pasta fechada → primeira página aberta
   if(p<=.14){
     return (p/.14)*Math.min(5.5,end);
   }
 
-  // 14–54%: primeiros 6 serviços visíveis
   if(p<=.54){
     const start=Math.min(5.5,end);
     const finish=Math.min(9.7,end);
     return start+((p-.14)/.40)*(finish-start);
   }
 
-  // 54–70%: virada da página
   if(p<=.70){
     const start=Math.min(9.7,end);
     const finish=Math.min(13.5,end);
     return start+((p-.54)/.16)*(finish-start);
   }
 
-  // 70–94%: últimos 6 serviços visíveis
   if(p<=.94){
     const start=Math.min(13.5,end);
     const finish=Math.max(end-.20,start);
     return start+((p-.70)/.24)*(finish-start);
   }
 
-  // 94–100%: segura praticamente o último frame para o CTA final
   const holdStart=Math.max(end-.20,0);
   return holdStart+((p-.94)/.06)*(end-holdStart);
 }
@@ -224,23 +227,10 @@ function servicesTimeFromProgress(progress){
 function serviceIndexFromProgress(progress){
   const p=clamp(progress,0,1);
 
-  // Abertura da pasta: texto institucional.
   if(p<.14) return -1;
-
-  // Primeiros 6 serviços.
-  if(p<.54){
-    return Math.min(5,Math.floor(((p-.14)/.40)*6));
-  }
-
-  // Durante a virada da página, mantém o sexto serviço.
+  if(p<.54) return Math.min(5,Math.floor(((p-.14)/.40)*6));
   if(p<.70) return 5;
-
-  // Últimos 6 serviços.
-  if(p<.94){
-    return Math.min(11,6+Math.floor(((p-.70)/.24)*6));
-  }
-
-  // Encerramento da seção: CTA final.
+  if(p<.94) return Math.min(11,6+Math.floor(((p-.70)/.24)*6));
   return 12;
 }
 
@@ -253,8 +243,29 @@ function setActiveService(index){
   });
 }
 
+function safeSetServicesTime(time){
+  if(!servicesVideo || servicesVideo.readyState<1) return false;
+
+  const duration=getServicesDuration();
+  const nextTime=clamp(time,0,Math.max(duration-.04,0));
+
+  try{
+    if(Math.abs(servicesVideo.currentTime-nextTime)>.015){
+      if(typeof servicesVideo.fastSeek==='function' && Math.abs(servicesVideo.currentTime-nextTime)>1.2){
+        servicesVideo.fastSeek(nextTime);
+      }else{
+        servicesVideo.currentTime=nextTime;
+      }
+    }
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
 function updateServicesTarget(){
   if(!servicesSection) return;
+
   servicesTargetProgress=measureServicesProgress();
   servicesTargetTime=servicesTimeFromProgress(servicesTargetProgress);
   setActiveService(serviceIndexFromProgress(servicesTargetProgress));
@@ -265,62 +276,62 @@ function updateServicesTarget(){
 }
 
 function animateServicesScrub(now){
-  servicesVisualProgress+=(servicesTargetProgress-servicesVisualProgress)*.10;
+  // Zera primeiro para que qualquer falha de mídia nunca congele
+  // permanentemente o requestAnimationFrame.
+  servicesRaf=0;
+
+  servicesVisualProgress+=(servicesTargetProgress-servicesVisualProgress)*.14;
 
   if(servicesProgressBar){
     servicesProgressBar.style.height=`${servicesVisualProgress*100}%`;
   }
 
-  if(servicesVideo && servicesDuration){
-    servicesVirtualTime+=(servicesTargetTime-servicesVirtualTime)*.14;
+  servicesVirtualTime+=(servicesTargetTime-servicesVirtualTime)*.22;
 
-    if(now-lastServicesSeek>30){
-      const nextTime=clamp(servicesVirtualTime,0,Math.max(servicesDuration-.02,0));
-      if(Math.abs(servicesVideo.currentTime-nextTime)>.012){
-        servicesVideo.currentTime=nextTime;
-      }
-      lastServicesSeek=now;
-    }
+  if(now-lastServicesSeek>28){
+    safeSetServicesTime(servicesVirtualTime);
+    lastServicesSeek=now;
   }
 
-  const progressMoving=Math.abs(servicesTargetProgress-servicesVisualProgress)>.0007;
-  const timeMoving=servicesDuration && Math.abs(servicesTargetTime-servicesVirtualTime)>.007;
+  const progressMoving=Math.abs(servicesTargetProgress-servicesVisualProgress)>.0008;
+  const timeMoving=Math.abs(servicesTargetTime-servicesVirtualTime)>.012;
 
   if(progressMoving || timeMoving){
     servicesRaf=requestAnimationFrame(animateServicesScrub);
   }else{
     servicesVisualProgress=servicesTargetProgress;
     servicesVirtualTime=servicesTargetTime;
+
     if(servicesProgressBar){
       servicesProgressBar.style.height=`${servicesVisualProgress*100}%`;
     }
-    servicesRaf=0;
+
+    safeSetServicesTime(servicesVirtualTime);
   }
 }
 
 function initServicesVideo(){
   if(!servicesVideo) return;
 
-  const duration=Number(servicesVideo.duration);
-  if(!Number.isFinite(duration) || duration<=0) return;
+  servicesVideo.muted=true;
+  servicesVideo.playsInline=true;
+  servicesVideo.setAttribute('playsinline','');
+  servicesVideo.setAttribute('webkit-playsinline','');
 
-  servicesDuration=duration;
+  getServicesDuration();
+
   servicesTargetProgress=measureServicesProgress();
   servicesVisualProgress=servicesTargetProgress;
   servicesTargetTime=servicesTimeFromProgress(servicesTargetProgress);
   servicesVirtualTime=servicesTargetTime;
 
-  try{
-    servicesVideo.currentTime=clamp(servicesVirtualTime,0,Math.max(servicesDuration-.02,0));
-  }catch(e){}
-
   setActiveService(serviceIndexFromProgress(servicesTargetProgress));
+
   if(servicesProgressBar){
     servicesProgressBar.style.height=`${servicesVisualProgress*100}%`;
   }
 
-  // Mesmo caso do Hero: inicializa também quando os metadados
-  // já estavam em cache antes de o listener ser registrado.
+  safeSetServicesTime(servicesVirtualTime);
   updateServicesTarget();
 }
 
@@ -328,12 +339,18 @@ if(servicesVideo){
   servicesVideo.pause();
   servicesVideo.muted=true;
   servicesVideo.playsInline=true;
+  servicesVideo.setAttribute('playsinline','');
+  servicesVideo.setAttribute('webkit-playsinline','');
+  servicesVideo.preload='auto';
 
-  if(servicesVideo.readyState>=1 && Number.isFinite(servicesVideo.duration) && servicesVideo.duration>0){
+  // Inicializa em qualquer evento útil; não depende de um único loadedmetadata.
+  ['loadedmetadata','durationchange','canplay','progress'].forEach(evt=>{
+    servicesVideo.addEventListener(evt,initServicesVideo);
+  });
+
+  if(servicesVideo.readyState>=1){
     initServicesVideo();
   }else{
-    servicesVideo.addEventListener('loadedmetadata',initServicesVideo,{once:true});
-    servicesVideo.addEventListener('durationchange',initServicesVideo,{once:true});
     try{ servicesVideo.load(); }catch(e){}
   }
 }
