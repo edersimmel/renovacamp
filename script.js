@@ -1,13 +1,23 @@
 const header=document.querySelector('.site-header');
 const menuToggle=document.querySelector('.menu-toggle');
 const navLinks=document.querySelectorAll('.nav-links a');
+
 const heroSection=document.querySelector('.hero-scroll');
 const heroVideo=document.getElementById('hero-video');
+const heroDesktopCanvas=document.getElementById('hero-desktop-canvas');
+const heroDesktopCtx=heroDesktopCanvas?.getContext('2d',{alpha:false});
 const heroMobileCanvas=document.getElementById('hero-mobile-canvas');
 const heroMobileCtx=heroMobileCanvas?.getContext('2d',{alpha:false});
 const progressBar=document.getElementById('hero-progress-bar');
+
 const prefersReduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isMobileViewport=window.matchMedia('(max-width: 900px)');
+
+const HERO_DESKTOP_FRAME_COUNT=90;
+const HERO_DESKTOP_FRAME_PATH=(n)=>`assets/hero-desktop-frames/frame-${String(n).padStart(3,'0')}.webp`;
+const heroDesktopFrames=new Array(HERO_DESKTOP_FRAME_COUNT+1);
+let heroDesktopFramesStarted=false;
+let heroCurrentDesktopFrame=-1;
 
 const HERO_MOBILE_FRAME_COUNT=60;
 const HERO_MOBILE_FRAME_PATH=(n)=>`assets/hero-mobile-frames/frame-${String(n).padStart(3,'0')}.webp`;
@@ -15,22 +25,14 @@ const heroMobileFrames=new Array(HERO_MOBILE_FRAME_COUNT+1);
 let heroMobileFramesStarted=false;
 let heroCurrentMobileFrame=-1;
 
-// Desktop mantém o MP4. No mobile, não carregamos o MP4: o Hero usa
-// sequência de frames em canvas, muito mais estável para scrub no iOS/Safari.
+// O Hero agora usa canvas frame a frame nos dois formatos.
+// Evita currentTime/seek do MP4, que pode engasgar dependendo do PC/navegador.
 if(heroVideo){
-  if(isMobileViewport.matches){
-    heroVideo.removeAttribute('src');
-    heroVideo.preload='none';
-    heroVideo.poster='assets/hero-mobile-poster.webp';
-  }else{
-    const selectedHeroSrc=heroVideo.dataset.desktopSrc;
-    const selectedHeroPoster=heroVideo.dataset.desktopPoster;
-    if(selectedHeroPoster) heroVideo.poster=selectedHeroPoster;
-    if(selectedHeroSrc) heroVideo.src=selectedHeroSrc;
-  }
+  heroVideo.removeAttribute('src');
+  heroVideo.preload='none';
 }
 
-const updateHeader=()=>header.classList.toggle('scrolled',window.scrollY>28);
+const updateHeader=()=>header?.classList.toggle('scrolled',window.scrollY>28);
 updateHeader();
 window.addEventListener('scroll',updateHeader,{passive:true});
 
@@ -38,23 +40,45 @@ menuToggle?.addEventListener('click',()=>{
   const open=header.classList.toggle('menu-open');
   menuToggle.setAttribute('aria-expanded',String(open));
 });
-navLinks.forEach(link=>link.addEventListener('click',()=>header.classList.remove('menu-open')));
+navLinks.forEach(link=>link.addEventListener('click',()=>header?.classList.remove('menu-open')));
 
 function clamp(n,min,max){return Math.min(max,Math.max(min,n));}
 
 let heroTargetProgress=0;
 let heroVisualProgress=0;
-let heroTargetTime=0;
-let heroVirtualTime=0;
-let heroDuration=0;
 let heroRaf=0;
-let lastHeroSeek=0;
 
 function measureHeroProgress(){
   if(!heroSection) return 0;
   const rect=heroSection.getBoundingClientRect();
   const total=Math.max(heroSection.offsetHeight-window.innerHeight,1);
   return clamp((-rect.top)/total,0,1);
+}
+
+function drawCover(ctx,img,w,h){
+  const iw=img.naturalWidth||img.width;
+  const ih=img.naturalHeight||img.height;
+  if(!iw || !ih) return;
+  const scale=Math.max(w/iw,h/ih);
+  const sw=w/scale;
+  const sh=h/scale;
+  const sx=(iw-sw)/2;
+  const sy=(ih-sh)/2;
+  ctx.drawImage(img,sx,sy,sw,sh,0,0,w,h);
+}
+
+function resizeHeroDesktopCanvas(){
+  if(!heroDesktopCanvas || isMobileViewport.matches) return;
+  const rect=heroDesktopCanvas.getBoundingClientRect();
+  if(!rect.width || !rect.height) return;
+  const dpr=Math.min(window.devicePixelRatio||1,1.35);
+  const w=Math.max(1,Math.min(1920,Math.round(rect.width*dpr)));
+  const h=Math.max(1,Math.min(1080,Math.round(rect.height*dpr)));
+  if(heroDesktopCanvas.width!==w || heroDesktopCanvas.height!==h){
+    heroDesktopCanvas.width=w;
+    heroDesktopCanvas.height=h;
+    heroCurrentDesktopFrame=-1;
+  }
 }
 
 function resizeHeroMobileCanvas(){
@@ -71,16 +95,49 @@ function resizeHeroMobileCanvas(){
   }
 }
 
-function drawCover(ctx,img,w,h){
-  const iw=img.naturalWidth||img.width;
-  const ih=img.naturalHeight||img.height;
-  if(!iw || !ih) return;
-  const scale=Math.max(w/iw,h/ih);
-  const sw=w/scale;
-  const sh=h/scale;
-  const sx=(iw-sw)/2;
-  const sy=(ih-sh)/2;
-  ctx.drawImage(img,sx,sy,sw,sh,0,0,w,h);
+function loadHeroDesktopFrame(n,priority=false){
+  n=clamp(Math.round(n),1,HERO_DESKTOP_FRAME_COUNT);
+  if(heroDesktopFrames[n]) return;
+  const img=new Image();
+  heroDesktopFrames[n]=img;
+  img.decoding='async';
+  img.src=HERO_DESKTOP_FRAME_PATH(n);
+  img.onload=()=>{
+    const target=1+Math.round(heroVisualProgress*(HERO_DESKTOP_FRAME_COUNT-1));
+    if(priority || n===target) drawHeroDesktopFrame(target);
+  };
+}
+
+function drawHeroDesktopFrame(frameNumber){
+  if(!heroDesktopCanvas || !heroDesktopCtx || isMobileViewport.matches) return;
+  resizeHeroDesktopCanvas();
+  const n=clamp(Math.round(frameNumber),1,HERO_DESKTOP_FRAME_COUNT);
+  const img=heroDesktopFrames[n];
+  if(img?.complete && img.naturalWidth){
+    if(heroCurrentDesktopFrame===n) return;
+    heroCurrentDesktopFrame=n;
+    heroDesktopCtx.clearRect(0,0,heroDesktopCanvas.width,heroDesktopCanvas.height);
+    drawCover(heroDesktopCtx,img,heroDesktopCanvas.width,heroDesktopCanvas.height);
+    return;
+  }
+  loadHeroDesktopFrame(n,true);
+  loadHeroDesktopFrame(n+1);
+  loadHeroDesktopFrame(n-1);
+}
+
+function preloadHeroDesktopFrames(){
+  if(heroDesktopFramesStarted || isMobileViewport.matches) return;
+  heroDesktopFramesStarted=true;
+
+  for(let n=1;n<=18;n++) loadHeroDesktopFrame(n);
+
+  let n=19;
+  const batch=()=>{
+    const end=Math.min(n+10,HERO_DESKTOP_FRAME_COUNT+1);
+    for(;n<end;n++) loadHeroDesktopFrame(n);
+    if(n<=HERO_DESKTOP_FRAME_COUNT) setTimeout(batch,55);
+  };
+  setTimeout(batch,70);
 }
 
 function loadHeroMobileFrame(n,priority=false){
@@ -109,7 +166,6 @@ function drawHeroMobileFrame(frameNumber){
     return;
   }
   loadHeroMobileFrame(n,true);
-  // Também aquece os vizinhos para o próximo gesto de scroll.
   loadHeroMobileFrame(n+1);
   loadHeroMobileFrame(n-1);
 }
@@ -118,10 +174,8 @@ function preloadHeroMobileFrames(){
   if(heroMobileFramesStarted || !isMobileViewport.matches) return;
   heroMobileFramesStarted=true;
 
-  // Hero é a primeira seção: primeiros frames entram imediatamente.
   for(let n=1;n<=12;n++) loadHeroMobileFrame(n);
 
-  // Restante em lotes leves para não saturar a rede/decodificador do celular.
   let n=13;
   const batch=()=>{
     const end=Math.min(n+7,HERO_MOBILE_FRAME_COUNT+1);
@@ -132,18 +186,12 @@ function preloadHeroMobileFrames(){
 }
 
 function updateHeroTarget(){
-  const rawProgress=measureHeroProgress();
-  heroTargetProgress=rawProgress;
-
-  if(!isMobileViewport.matches && heroDuration){
-    heroTargetTime=heroTargetProgress*heroDuration;
-  }
+  heroTargetProgress=measureHeroProgress();
   if(!heroRaf) heroRaf=requestAnimationFrame(animateHeroScrub);
 }
 
-function animateHeroScrub(now){
-  const visualEase=isMobileViewport.matches ? 0.045 : 0.08;
-  const videoEase=0.10;
+function animateHeroScrub(){
+  const visualEase=isMobileViewport.matches ? 0.045 : 0.065;
 
   heroVisualProgress += (heroTargetProgress-heroVisualProgress)*visualEase;
   document.documentElement.style.setProperty('--hero-progress',heroVisualProgress.toFixed(4));
@@ -152,75 +200,50 @@ function animateHeroScrub(now){
   if(isMobileViewport.matches){
     preloadHeroMobileFrames();
     drawHeroMobileFrame(1+heroVisualProgress*(HERO_MOBILE_FRAME_COUNT-1));
-  }else if(heroVideo && heroDuration){
-    heroVirtualTime += (heroTargetTime-heroVirtualTime)*videoEase;
-    if(now-lastHeroSeek>30){
-      const nextTime=clamp(heroVirtualTime,0,Math.max(heroDuration-.015,0));
-      if(Math.abs(heroVideo.currentTime-nextTime)>.012){
-        try{ heroVideo.currentTime=nextTime; }catch(e){}
-      }
-      lastHeroSeek=now;
-    }
+  }else{
+    preloadHeroDesktopFrames();
+    drawHeroDesktopFrame(1+heroVisualProgress*(HERO_DESKTOP_FRAME_COUNT-1));
   }
 
-  const progressMoving=Math.abs(heroTargetProgress-heroVisualProgress)>.0007;
-  const timeMoving=!isMobileViewport.matches && heroDuration && Math.abs(heroTargetTime-heroVirtualTime)>.006;
-
-  if(progressMoving || timeMoving){
+  if(Math.abs(heroTargetProgress-heroVisualProgress)>.0007){
     heroRaf=requestAnimationFrame(animateHeroScrub);
   }else{
     heroVisualProgress=heroTargetProgress;
-    if(!isMobileViewport.matches) heroVirtualTime=heroTargetTime;
     document.documentElement.style.setProperty('--hero-progress',heroVisualProgress.toFixed(4));
     if(progressBar) progressBar.style.height=`${heroVisualProgress*100}%`;
+
     if(isMobileViewport.matches){
       drawHeroMobileFrame(1+heroVisualProgress*(HERO_MOBILE_FRAME_COUNT-1));
+    }else{
+      drawHeroDesktopFrame(1+heroVisualProgress*(HERO_DESKTOP_FRAME_COUNT-1));
     }
     heroRaf=0;
   }
 }
 
-function initHeroVideo(){
-  if(!heroVideo || isMobileViewport.matches) return;
-  const duration=Number(heroVideo.duration);
-  if(!Number.isFinite(duration) || duration<=0) return;
-
-  heroDuration=duration;
-  heroTargetProgress=measureHeroProgress();
-  heroVisualProgress=heroTargetProgress;
-  heroTargetTime=heroTargetProgress*heroDuration;
-  heroVirtualTime=heroTargetTime;
-
-  try{ heroVideo.currentTime=clamp(heroVirtualTime,0,Math.max(heroDuration-.015,0)); }catch(e){}
-
-  document.documentElement.style.setProperty('--hero-progress',heroVisualProgress.toFixed(4));
-  if(progressBar) progressBar.style.height=`${heroVisualProgress*100}%`;
-  updateHeroTarget();
-}
+heroTargetProgress=measureHeroProgress();
+heroVisualProgress=heroTargetProgress;
 
 if(isMobileViewport.matches){
   preloadHeroMobileFrames();
   resizeHeroMobileCanvas();
-  loadHeroMobileFrame(1,true);
-  drawHeroMobileFrame(1);
-}else if(heroVideo){
-  heroVideo.pause();
-  heroVideo.muted=true;
-  heroVideo.playsInline=true;
-
-  if(heroVideo.readyState>=1 && Number.isFinite(heroVideo.duration) && heroVideo.duration>0){
-    initHeroVideo();
-  }else{
-    heroVideo.addEventListener('loadedmetadata',initHeroVideo,{once:true});
-    heroVideo.addEventListener('durationchange',initHeroVideo,{once:true});
-    try{ heroVideo.load(); }catch(e){}
-  }
+  loadHeroMobileFrame(1+heroVisualProgress*(HERO_MOBILE_FRAME_COUNT-1),true);
+  drawHeroMobileFrame(1+heroVisualProgress*(HERO_MOBILE_FRAME_COUNT-1));
+}else{
+  preloadHeroDesktopFrames();
+  resizeHeroDesktopCanvas();
+  loadHeroDesktopFrame(1+heroVisualProgress*(HERO_DESKTOP_FRAME_COUNT-1),true);
+  drawHeroDesktopFrame(1+heroVisualProgress*(HERO_DESKTOP_FRAME_COUNT-1));
 }
 
-updateHeroTarget();
+document.documentElement.style.setProperty('--hero-progress',heroVisualProgress.toFixed(4));
+if(progressBar) progressBar.style.height=`${heroVisualProgress*100}%`;
+
 window.addEventListener('scroll',updateHeroTarget,{passive:true});
 window.addEventListener('resize',()=>{
+  resizeHeroDesktopCanvas();
   resizeHeroMobileCanvas();
+  heroCurrentDesktopFrame=-1;
   heroCurrentMobileFrame=-1;
   updateHeroTarget();
 });
