@@ -36,7 +36,7 @@
   <link rel="preload" as="image" href="assets/after.webp" />
   <link rel="preload" as="video" href="assets/hero-scroll.mp4" type="video/mp4" media="(min-width: 901px)" />
   <link rel="preload" as="image" href="assets/hero-mobile-frames/frame-001.webp" media="(max-width: 900px)" />
-  <link rel="stylesheet" href="styles.css?v=hero-desktop-canvas-2" />
+  <link rel="stylesheet" href="styles.css?v=services-desktop-frames-1" />
 
   <script type="application/ld+json">
   {
@@ -270,9 +270,16 @@
           muted
           playsinline
           webkit-playsinline
-          preload="metadata"
+          preload="none"
           aria-label="Pasta RENOVACAMP apresentando os serviços da empresa"
         ></video>
+        <canvas
+          class="services-desktop-canvas"
+          id="services-desktop-canvas"
+          width="1440"
+          height="810"
+          aria-label="Pasta RENOVACAMP apresentando os serviços da empresa"
+        ></canvas>
         <canvas
           class="services-mobile-canvas"
           id="services-mobile-canvas"
@@ -519,6 +526,6 @@
     <span class="sr-only">WhatsApp</span>
   </a>
 
-  <script src="script.js?v=hero-desktop-canvas-2"></script>
+  <script src="script.js?v=services-desktop-frames-1"></script>
 </body>
 </html>

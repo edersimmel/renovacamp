@@ -289,26 +289,42 @@ form?.addEventListener('submit',(e)=>{
 
 
 // =========================================================
-// SERVIÇOS — desktop por vídeo / mobile por sequência de frames
+// SERVIÇOS — desktop e mobile por sequência de frames
 // =========================================================
 const servicesSection=document.querySelector('.services-scroll');
 const servicesVideo=document.getElementById('services-video');
-const servicesCanvas=document.getElementById('services-mobile-canvas');
-const servicesCanvasCtx=servicesCanvas?.getContext('2d');
+const servicesDesktopCanvas=document.getElementById('services-desktop-canvas');
+const servicesDesktopCtx=servicesDesktopCanvas?.getContext('2d',{alpha:false});
+const servicesMobileCanvas=document.getElementById('services-mobile-canvas');
+const servicesMobileCtx=servicesMobileCanvas?.getContext('2d',{alpha:false});
 const servicesCopies=[...document.querySelectorAll('[data-service-copy]')];
 const servicesProgressBar=document.getElementById('services-progress-bar');
 const isMobileServices=window.matchMedia('(max-width: 900px)');
 
+const SERVICES_DURATION=16;
+const SERVICES_DESKTOP_FRAME_COUNT=96;
+const SERVICES_DESKTOP_FRAME_PATH=(n)=>`assets/services-desktop-frames/frame-${String(n).padStart(3,'0')}.webp`;
 const SERVICES_MOBILE_FRAME_COUNT=96;
 const SERVICES_MOBILE_FRAME_PATH=(n)=>`assets/services-mobile-frames/frame-${String(n).padStart(3,'0')}.webp`;
 
-let servicesDuration=16;
+const servicesDesktopFrames=new Array(SERVICES_DESKTOP_FRAME_COUNT+1);
+const servicesMobileFrames=new Array(SERVICES_MOBILE_FRAME_COUNT+1);
 let servicesProgress=0;
 let servicesRaf=0;
 let activeServiceIndex=-999;
-let servicesFramesStarted=false;
-let currentServicesFrame=-1;
-const servicesFrames=new Array(SERVICES_MOBILE_FRAME_COUNT+1);
+let servicesDesktopFramesStarted=false;
+let servicesMobileFramesStarted=false;
+let currentServicesDesktopFrame=-1;
+let currentServicesMobileFrame=-1;
+
+if(servicesVideo){
+  servicesVideo.muted=true;
+  servicesVideo.playsInline=true;
+  servicesVideo.setAttribute('playsinline','');
+  servicesVideo.setAttribute('webkit-playsinline','');
+  servicesVideo.preload='none';
+  try{ servicesVideo.pause(); }catch(e){}
+}
 
 function measureServicesProgress(){
   if(!servicesSection) return 0;
@@ -319,7 +335,7 @@ function measureServicesProgress(){
 
 function servicesTimeFromProgress(progress){
   const p=clamp(progress,0,1);
-  const duration=Math.max(servicesDuration||16,0);
+  const duration=Math.max(SERVICES_DURATION,0);
   const end=Math.max(duration-.04,0);
 
   if(p<=.14) return (p/.14)*Math.min(5.5,end);
@@ -358,63 +374,127 @@ function serviceIndexFromProgress(progress){
 function setActiveService(index){
   if(index===activeServiceIndex) return;
   activeServiceIndex=index;
-
   servicesCopies.forEach(item=>{
     item.classList.toggle('active',Number(item.dataset.serviceCopy)===index);
   });
 }
 
-function drawServicesFrame(frameNumber){
-  if(!servicesCanvasCtx || !servicesCanvas) return;
-
-  const n=clamp(Math.round(frameNumber),1,SERVICES_MOBILE_FRAME_COUNT);
-  const img=servicesFrames[n];
-
-  if(img?.complete && img.naturalWidth){
-    if(currentServicesFrame===n) return;
-    currentServicesFrame=n;
-
-    servicesCanvasCtx.clearRect(0,0,servicesCanvas.width,servicesCanvas.height);
-    servicesCanvasCtx.drawImage(img,0,0,servicesCanvas.width,servicesCanvas.height);
-    return;
+function resizeServicesDesktopCanvas(){
+  if(!servicesDesktopCanvas || isMobileServices.matches) return;
+  const rect=servicesDesktopCanvas.getBoundingClientRect();
+  if(!rect.width || !rect.height) return;
+  const dpr=Math.min(window.devicePixelRatio||1,1.35);
+  const w=Math.max(1,Math.min(1920,Math.round(rect.width*dpr)));
+  const h=Math.max(1,Math.min(1080,Math.round(rect.height*dpr)));
+  if(servicesDesktopCanvas.width!==w || servicesDesktopCanvas.height!==h){
+    servicesDesktopCanvas.width=w;
+    servicesDesktopCanvas.height=h;
+    currentServicesDesktopFrame=-1;
   }
-
-  // Garante que o frame solicitado tenha prioridade.
-  loadServicesFrame(n,true);
 }
 
-function loadServicesFrame(n,priority=false){
-  if(n<1 || n>SERVICES_MOBILE_FRAME_COUNT) return;
-  if(servicesFrames[n]) return;
+function resizeServicesMobileCanvas(){
+  if(!servicesMobileCanvas || !isMobileServices.matches) return;
+  const rect=servicesMobileCanvas.getBoundingClientRect();
+  if(!rect.width || !rect.height) return;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=Math.max(1,Math.round(rect.width*dpr));
+  const h=Math.max(1,Math.round(rect.height*dpr));
+  if(servicesMobileCanvas.width!==w || servicesMobileCanvas.height!==h){
+    servicesMobileCanvas.width=w;
+    servicesMobileCanvas.height=h;
+    currentServicesMobileFrame=-1;
+  }
+}
 
+function loadServicesDesktopFrame(n,priority=false){
+  n=clamp(Math.round(n),1,SERVICES_DESKTOP_FRAME_COUNT);
+  if(servicesDesktopFrames[n]) return;
   const img=new Image();
-  servicesFrames[n]=img;
+  servicesDesktopFrames[n]=img;
   img.decoding='async';
-  img.src=SERVICES_MOBILE_FRAME_PATH(n);
-
+  img.src=SERVICES_DESKTOP_FRAME_PATH(n);
   img.onload=()=>{
-    const target=1+Math.round(servicesProgress*(SERVICES_MOBILE_FRAME_COUNT-1));
-    if(n===target || priority){
-      drawServicesFrame(target);
-    }
+    const targetTime=servicesTimeFromProgress(servicesProgress);
+    const target=1+Math.round((targetTime/SERVICES_DURATION)*(SERVICES_DESKTOP_FRAME_COUNT-1));
+    if(priority || n===target) drawServicesDesktopFrame(target);
   };
 }
 
-function preloadServicesFrames(){
-  if(servicesFramesStarted || !isMobileServices.matches) return;
-  servicesFramesStarted=true;
+function drawServicesDesktopFrame(frameNumber){
+  if(!servicesDesktopCanvas || !servicesDesktopCtx || isMobileServices.matches) return;
+  resizeServicesDesktopCanvas();
+  const n=clamp(Math.round(frameNumber),1,SERVICES_DESKTOP_FRAME_COUNT);
+  const img=servicesDesktopFrames[n];
+  if(img?.complete && img.naturalWidth){
+    if(currentServicesDesktopFrame===n) return;
+    currentServicesDesktopFrame=n;
+    servicesDesktopCtx.clearRect(0,0,servicesDesktopCanvas.width,servicesDesktopCanvas.height);
+    drawCover(servicesDesktopCtx,img,servicesDesktopCanvas.width,servicesDesktopCanvas.height);
+    return;
+  }
+  loadServicesDesktopFrame(n,true);
+  loadServicesDesktopFrame(n+1);
+  loadServicesDesktopFrame(n-1);
+}
 
-  // Primeiros frames imediatos para a entrada da seção.
-  for(let n=1;n<=12;n++) loadServicesFrame(n);
+function preloadServicesDesktopFrames(){
+  if(servicesDesktopFramesStarted || isMobileServices.matches) return;
+  servicesDesktopFramesStarted=true;
 
-  // O restante entra gradualmente para não travar a rede do celular.
+  for(let n=1;n<=16;n++) loadServicesDesktopFrame(n);
+
+  let n=17;
+  const batch=()=>{
+    const end=Math.min(n+10,SERVICES_DESKTOP_FRAME_COUNT+1);
+    for(;n<end;n++) loadServicesDesktopFrame(n);
+    if(n<=SERVICES_DESKTOP_FRAME_COUNT) setTimeout(batch,55);
+  };
+  setTimeout(batch,70);
+}
+
+function loadServicesMobileFrame(n,priority=false){
+  n=clamp(Math.round(n),1,SERVICES_MOBILE_FRAME_COUNT);
+  if(servicesMobileFrames[n]) return;
+  const img=new Image();
+  servicesMobileFrames[n]=img;
+  img.decoding='async';
+  img.src=SERVICES_MOBILE_FRAME_PATH(n);
+  img.onload=()=>{
+    const targetTime=servicesTimeFromProgress(servicesProgress);
+    const target=1+Math.round((targetTime/SERVICES_DURATION)*(SERVICES_MOBILE_FRAME_COUNT-1));
+    if(priority || n===target) drawServicesMobileFrame(target);
+  };
+}
+
+function drawServicesMobileFrame(frameNumber){
+  if(!servicesMobileCanvas || !servicesMobileCtx || !isMobileServices.matches) return;
+  resizeServicesMobileCanvas();
+  const n=clamp(Math.round(frameNumber),1,SERVICES_MOBILE_FRAME_COUNT);
+  const img=servicesMobileFrames[n];
+  if(img?.complete && img.naturalWidth){
+    if(currentServicesMobileFrame===n) return;
+    currentServicesMobileFrame=n;
+    servicesMobileCtx.clearRect(0,0,servicesMobileCanvas.width,servicesMobileCanvas.height);
+    servicesMobileCtx.drawImage(img,0,0,servicesMobileCanvas.width,servicesMobileCanvas.height);
+    return;
+  }
+  loadServicesMobileFrame(n,true);
+  loadServicesMobileFrame(n+1);
+  loadServicesMobileFrame(n-1);
+}
+
+function preloadServicesMobileFrames(){
+  if(servicesMobileFramesStarted || !isMobileServices.matches) return;
+  servicesMobileFramesStarted=true;
+
+  for(let n=1;n<=12;n++) loadServicesMobileFrame(n);
+
   let n=13;
   const batch=()=>{
     const end=Math.min(n+9,SERVICES_MOBILE_FRAME_COUNT+1);
-    for(;n<end;n++) loadServicesFrame(n);
-    if(n<=SERVICES_MOBILE_FRAME_COUNT){
-      setTimeout(batch,70);
-    }
+    for(;n<end;n++) loadServicesMobileFrame(n);
+    if(n<=SERVICES_MOBILE_FRAME_COUNT) setTimeout(batch,70);
   };
   setTimeout(batch,80);
 }
@@ -431,21 +511,16 @@ function renderServicesScroll(){
 
   setActiveService(serviceIndexFromProgress(servicesProgress));
 
-  if(isMobileServices.matches){
-    preloadServicesFrames();
-    const frame=1+servicesProgress*(SERVICES_MOBILE_FRAME_COUNT-1);
-    drawServicesFrame(frame);
-    return;
-  }
+  const targetTime=servicesTimeFromProgress(servicesProgress);
 
-  // Desktop continua usando o MP4 porque já está funcionando corretamente.
-  if(servicesVideo && servicesVideo.readyState>=1){
-    const t=servicesTimeFromProgress(servicesProgress);
-    try{
-      if(Math.abs(servicesVideo.currentTime-t)>.01){
-        servicesVideo.currentTime=t;
-      }
-    }catch(e){}
+  if(isMobileServices.matches){
+    preloadServicesMobileFrames();
+    const frame=1+(targetTime/SERVICES_DURATION)*(SERVICES_MOBILE_FRAME_COUNT-1);
+    drawServicesMobileFrame(frame);
+  }else{
+    preloadServicesDesktopFrames();
+    const frame=1+(targetTime/SERVICES_DURATION)*(SERVICES_DESKTOP_FRAME_COUNT-1);
+    drawServicesDesktopFrame(frame);
   }
 }
 
@@ -455,47 +530,13 @@ function updateServicesTarget(){
   }
 }
 
-function initServicesVideo(){
-  if(!servicesVideo || isMobileServices.matches) return;
-
-  servicesVideo.muted=true;
-  servicesVideo.playsInline=true;
-  servicesVideo.pause();
-
-  const d=Number(servicesVideo.duration);
-  if(Number.isFinite(d) && d>0){
-    servicesDuration=d;
-  }
-
-  renderServicesScroll();
-}
-
-if(servicesVideo){
-  servicesVideo.muted=true;
-  servicesVideo.playsInline=true;
-  servicesVideo.setAttribute('playsinline','');
-  servicesVideo.setAttribute('webkit-playsinline','');
-  servicesVideo.preload=isMobileServices.matches ? 'none' : 'metadata';
-
-  if(!isMobileServices.matches){
-    servicesVideo.addEventListener('loadedmetadata',initServicesVideo);
-    servicesVideo.addEventListener('canplay',initServicesVideo,{once:true});
-
-    if(servicesVideo.readyState>=1){
-      initServicesVideo();
-    }else{
-      try{ servicesVideo.load(); }catch(e){}
-    }
-  }
-}
-
 if(servicesSection && 'IntersectionObserver' in window){
   const servicesWarmup=new IntersectionObserver((entries)=>{
     if(entries.some(entry=>entry.isIntersecting)){
       if(isMobileServices.matches){
-        preloadServicesFrames();
-      }else if(servicesVideo && servicesVideo.readyState===0){
-        try{ servicesVideo.load(); }catch(e){}
+        preloadServicesMobileFrames();
+      }else{
+        preloadServicesDesktopFrames();
       }
       servicesWarmup.disconnect();
     }
@@ -503,9 +544,28 @@ if(servicesSection && 'IntersectionObserver' in window){
   servicesWarmup.observe(servicesSection);
 }
 
+servicesProgress=measureServicesProgress();
+if(isMobileServices.matches){
+  preloadServicesMobileFrames();
+  resizeServicesMobileCanvas();
+  loadServicesMobileFrame(1,true);
+  drawServicesMobileFrame(1);
+}else{
+  preloadServicesDesktopFrames();
+  resizeServicesDesktopCanvas();
+  loadServicesDesktopFrame(1,true);
+  drawServicesDesktopFrame(1);
+}
+
 renderServicesScroll();
 window.addEventListener('scroll',updateServicesTarget,{passive:true});
-window.addEventListener('resize',updateServicesTarget);
+window.addEventListener('resize',()=>{
+  resizeServicesDesktopCanvas();
+  resizeServicesMobileCanvas();
+  currentServicesDesktopFrame=-1;
+  currentServicesMobileFrame=-1;
+  updateServicesTarget();
+});
 
 // Hero: muda o indicador ANTES/DEPOIS quando 40% da transformação já foi percorrida
 const heroPhaseLabel=document.getElementById('hero-phase-label');
@@ -603,8 +663,18 @@ window.addEventListener('orientationchange',()=>{
 
 // Reativa os alvos quando a página volta do cache do navegador (bfcache).
 window.addEventListener('pageshow',()=>{
-  if(heroVideo && !heroDuration) initHeroVideo();
-  if(servicesVideo && !isMobileServices.matches) initServicesVideo();
+  if(isMobileViewport.matches){
+    preloadHeroMobileFrames();
+  }else{
+    preloadHeroDesktopFrames();
+  }
+
+  if(isMobileServices.matches){
+    preloadServicesMobileFrames();
+  }else{
+    preloadServicesDesktopFrames();
+  }
+
   updateHeroTarget();
   updateServicesTarget();
 });
