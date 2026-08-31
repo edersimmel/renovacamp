@@ -122,3 +122,18 @@ Não serão mais criados arquivos `styles-vX.css` ou `script-vX.js`.
 - Serviços desktop e mobile mantidos sem alterações.
 - Hero mobile aumentado para 260svh (250svh em celulares menores).
 - Progresso mobile do Hero passou a ser linear para não acelerar no final do swipe.
+
+
+## Hero vertical no mobile
+- Desktop mantém `assets/hero-scroll.mp4` horizontal.
+- Mobile usa `assets/hero-scroll-mobile.mp4` em 9:16.
+- O vídeo mobile foi recodificado para scrub de scroll com H.264, `faststart` e keyframes densos.
+- A velocidade/altura de scroll mobile aprovada foi preservada.
+- A seção Serviços não foi alterada.
+
+
+## Hero desktop atualizado
+- Desktop usa o novo `before-after-horizontal.mp4`, tratado como `assets/hero-scroll.mp4`.
+- Mobile continua usando `assets/hero-scroll-mobile.mp4` vertical.
+- Ambos os vídeos foram preparados para scrub de scroll com H.264, `faststart` e keyframes densos.
+- Seção Serviços preservada sem alterações.

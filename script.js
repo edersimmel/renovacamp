@@ -7,6 +7,26 @@ const progressBar=document.getElementById('hero-progress-bar');
 const prefersReduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isMobileViewport=window.matchMedia('(max-width: 900px)');
 
+// Hero responsivo: desktop usa o vídeo horizontal; mobile usa o 9:16.
+if(heroVideo){
+  const selectedHeroSrc=isMobileViewport.matches
+    ? heroVideo.dataset.mobileSrc
+    : heroVideo.dataset.desktopSrc;
+
+  const selectedHeroPoster=isMobileViewport.matches
+    ? heroVideo.dataset.mobilePoster
+    : heroVideo.dataset.desktopPoster;
+
+  if(selectedHeroPoster){
+    heroVideo.poster=selectedHeroPoster;
+  }
+
+  if(selectedHeroSrc){
+    heroVideo.src=selectedHeroSrc;
+  }
+}
+
+
 const updateHeader=()=>header.classList.toggle('scrolled',window.scrollY>28);
 updateHeader();
 window.addEventListener('scroll',updateHeader,{passive:true});
