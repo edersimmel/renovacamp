@@ -1304,3 +1304,11 @@ button,input,select,textarea{font:inherit}
 @media(prefers-reduced-motion:reduce){
   .whatsapp-float::before{animation:none}
 }
+
+
+/* ===== HERO DESKTOP — AÇÕES DESLOCADAS PARA LIBERAR ANTES/DEPOIS ===== */
+@media(min-width:901px){
+  .hero-actions{
+    margin-left:clamp(64px,5vw,92px);
+  }
+}
