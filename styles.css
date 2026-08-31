@@ -1177,3 +1177,130 @@ button,input,select,textarea{font:inherit}
     transform:none !important;
   }
 }
+
+
+/* ===== HERO MOBILE — CANVAS ESTÁVEL PARA SCRUB ===== */
+.hero-mobile-canvas{display:none}
+
+@media(max-width:900px){
+  .hero-bg-video{display:none !important}
+
+  .hero-sticky{
+    background:#111 url('assets/hero-mobile-poster.webp') center center/cover no-repeat !important;
+  }
+
+  .hero-mobile-canvas{
+    display:block;
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    z-index:0;
+    pointer-events:none;
+  }
+}
+
+
+/* ===== WHATSAPP FLUTUANTE — ÍCONE ORIGINAL + EFEITO SOMENTE NA BORDA ===== */
+.sr-only{
+  position:absolute !important;
+  width:1px !important;
+  height:1px !important;
+  padding:0 !important;
+  margin:-1px !important;
+  overflow:hidden !important;
+  clip:rect(0,0,0,0) !important;
+  white-space:nowrap !important;
+  border:0 !important;
+}
+
+.whatsapp-float{
+  position:fixed;
+  right:24px;
+  bottom:24px;
+  z-index:800;
+  width:62px;
+  height:62px;
+  padding:0;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:transparent;
+  color:inherit;
+  isolation:isolate;
+  box-shadow:0 10px 28px rgba(0,0,0,.20);
+  transition:transform .2s ease;
+}
+
+.whatsapp-icon{
+  width:58px;
+  height:58px;
+  display:block;
+  border-radius:50%;
+  position:relative;
+  z-index:2;
+}
+
+/* Anel externo: só a borda gira/brilha. O ícone permanece totalmente estático. */
+.whatsapp-float::before{
+  content:'';
+  position:absolute;
+  inset:-5px;
+  border-radius:50%;
+  padding:2px;
+  background:conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 230deg,
+    rgba(255,255,255,.10) 245deg,
+    rgba(255,255,255,1) 272deg,
+    #25D366 300deg,
+    rgba(37,211,102,.25) 326deg,
+    transparent 350deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask-composite:exclude;
+  z-index:1;
+  animation:whatsapp-border-spin 2.1s linear infinite;
+  filter:drop-shadow(0 0 4px rgba(37,211,102,.48));
+  pointer-events:none;
+}
+
+.whatsapp-float::after{
+  content:none;
+}
+
+.whatsapp-float:hover{
+  transform:translateY(-2px);
+}
+
+.whatsapp-float:focus-visible{
+  outline:2px solid #25D366;
+  outline-offset:7px;
+}
+
+@keyframes whatsapp-border-spin{
+  to{transform:rotate(360deg)}
+}
+
+@media(max-width:620px){
+  .whatsapp-float{
+    right:18px;
+    bottom:18px;
+    width:58px;
+    height:58px;
+  }
+
+  .whatsapp-icon{
+    width:54px;
+    height:54px;
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  .whatsapp-float::before{animation:none}
+}
