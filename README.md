@@ -137,3 +137,10 @@ Não serão mais criados arquivos `styles-vX.css` ou `script-vX.js`.
 - Mobile continua usando `assets/hero-scroll-mobile.mp4` vertical.
 - Ambos os vídeos foram preparados para scrub de scroll com H.264, `faststart` e keyframes densos.
 - Seção Serviços preservada sem alterações.
+
+
+## Correção Hero mobile + WhatsApp
+- Hero mobile agora usa canvas com 123 frames WebP (720×1280), evitando seek de MP4 no iOS/Safari.
+- Hero desktop continua usando `assets/hero-scroll.mp4`.
+- Serviços permanecem exatamente no modo aprovado: vídeo no desktop e canvas de frames no mobile.
+- Botão flutuante do WhatsApp agora usa ícone tradicional verde, com borda luminosa giratória e pulso discreto.

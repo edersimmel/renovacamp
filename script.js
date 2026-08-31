@@ -3,29 +3,32 @@ const menuToggle=document.querySelector('.menu-toggle');
 const navLinks=document.querySelectorAll('.nav-links a');
 const heroSection=document.querySelector('.hero-scroll');
 const heroVideo=document.getElementById('hero-video');
+const heroMobileCanvas=document.getElementById('hero-mobile-canvas');
+const heroMobileCtx=heroMobileCanvas?.getContext('2d',{alpha:false});
 const progressBar=document.getElementById('hero-progress-bar');
 const prefersReduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isMobileViewport=window.matchMedia('(max-width: 900px)');
 
-// Hero responsivo: desktop usa o vídeo horizontal; mobile usa o 9:16.
+const HERO_MOBILE_FRAME_COUNT=60;
+const HERO_MOBILE_FRAME_PATH=(n)=>`assets/hero-mobile-frames/frame-${String(n).padStart(3,'0')}.webp`;
+const heroMobileFrames=new Array(HERO_MOBILE_FRAME_COUNT+1);
+let heroMobileFramesStarted=false;
+let heroCurrentMobileFrame=-1;
+
+// Desktop mantém o MP4. No mobile, não carregamos o MP4: o Hero usa
+// sequência de frames em canvas, muito mais estável para scrub no iOS/Safari.
 if(heroVideo){
-  const selectedHeroSrc=isMobileViewport.matches
-    ? heroVideo.dataset.mobileSrc
-    : heroVideo.dataset.desktopSrc;
-
-  const selectedHeroPoster=isMobileViewport.matches
-    ? heroVideo.dataset.mobilePoster
-    : heroVideo.dataset.desktopPoster;
-
-  if(selectedHeroPoster){
-    heroVideo.poster=selectedHeroPoster;
-  }
-
-  if(selectedHeroSrc){
-    heroVideo.src=selectedHeroSrc;
+  if(isMobileViewport.matches){
+    heroVideo.removeAttribute('src');
+    heroVideo.preload='none';
+    heroVideo.poster='assets/hero-mobile-poster.webp';
+  }else{
+    const selectedHeroSrc=heroVideo.dataset.desktopSrc;
+    const selectedHeroPoster=heroVideo.dataset.desktopPoster;
+    if(selectedHeroPoster) heroVideo.poster=selectedHeroPoster;
+    if(selectedHeroSrc) heroVideo.src=selectedHeroSrc;
   }
 }
-
 
 const updateHeader=()=>header.classList.toggle('scrolled',window.scrollY>28);
 updateHeader();
@@ -54,61 +57,131 @@ function measureHeroProgress(){
   return clamp((-rect.top)/total,0,1);
 }
 
-function updateHeroTarget(){
-  const rawProgress=measureHeroProgress();
-
-  // Mobile agora usa progresso linear. A velocidade é controlada pela
-  // distância maior da seção, evitando aceleração no fim do gesto.
-  heroTargetProgress=rawProgress;
-
-  if(heroDuration){
-    heroTargetTime=heroTargetProgress*heroDuration;
-  }
-  if(!heroRaf){
-    heroRaf=requestAnimationFrame(animateHeroScrub);
+function resizeHeroMobileCanvas(){
+  if(!heroMobileCanvas || !isMobileViewport.matches) return;
+  const rect=heroMobileCanvas.getBoundingClientRect();
+  if(!rect.width || !rect.height) return;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=Math.max(1,Math.round(rect.width*dpr));
+  const h=Math.max(1,Math.round(rect.height*dpr));
+  if(heroMobileCanvas.width!==w || heroMobileCanvas.height!==h){
+    heroMobileCanvas.width=w;
+    heroMobileCanvas.height=h;
+    heroCurrentMobileFrame=-1;
   }
 }
 
+function drawCover(ctx,img,w,h){
+  const iw=img.naturalWidth||img.width;
+  const ih=img.naturalHeight||img.height;
+  if(!iw || !ih) return;
+  const scale=Math.max(w/iw,h/ih);
+  const sw=w/scale;
+  const sh=h/scale;
+  const sx=(iw-sw)/2;
+  const sy=(ih-sh)/2;
+  ctx.drawImage(img,sx,sy,sw,sh,0,0,w,h);
+}
+
+function loadHeroMobileFrame(n,priority=false){
+  n=clamp(Math.round(n),1,HERO_MOBILE_FRAME_COUNT);
+  if(heroMobileFrames[n]) return;
+  const img=new Image();
+  heroMobileFrames[n]=img;
+  img.decoding='async';
+  img.src=HERO_MOBILE_FRAME_PATH(n);
+  img.onload=()=>{
+    const target=1+Math.round(heroVisualProgress*(HERO_MOBILE_FRAME_COUNT-1));
+    if(priority || n===target) drawHeroMobileFrame(target);
+  };
+}
+
+function drawHeroMobileFrame(frameNumber){
+  if(!heroMobileCanvas || !heroMobileCtx || !isMobileViewport.matches) return;
+  resizeHeroMobileCanvas();
+  const n=clamp(Math.round(frameNumber),1,HERO_MOBILE_FRAME_COUNT);
+  const img=heroMobileFrames[n];
+  if(img?.complete && img.naturalWidth){
+    if(heroCurrentMobileFrame===n) return;
+    heroCurrentMobileFrame=n;
+    heroMobileCtx.clearRect(0,0,heroMobileCanvas.width,heroMobileCanvas.height);
+    drawCover(heroMobileCtx,img,heroMobileCanvas.width,heroMobileCanvas.height);
+    return;
+  }
+  loadHeroMobileFrame(n,true);
+  // Também aquece os vizinhos para o próximo gesto de scroll.
+  loadHeroMobileFrame(n+1);
+  loadHeroMobileFrame(n-1);
+}
+
+function preloadHeroMobileFrames(){
+  if(heroMobileFramesStarted || !isMobileViewport.matches) return;
+  heroMobileFramesStarted=true;
+
+  // Hero é a primeira seção: primeiros frames entram imediatamente.
+  for(let n=1;n<=12;n++) loadHeroMobileFrame(n);
+
+  // Restante em lotes leves para não saturar a rede/decodificador do celular.
+  let n=13;
+  const batch=()=>{
+    const end=Math.min(n+7,HERO_MOBILE_FRAME_COUNT+1);
+    for(;n<end;n++) loadHeroMobileFrame(n);
+    if(n<=HERO_MOBILE_FRAME_COUNT) setTimeout(batch,70);
+  };
+  setTimeout(batch,90);
+}
+
+function updateHeroTarget(){
+  const rawProgress=measureHeroProgress();
+  heroTargetProgress=rawProgress;
+
+  if(!isMobileViewport.matches && heroDuration){
+    heroTargetTime=heroTargetProgress*heroDuration;
+  }
+  if(!heroRaf) heroRaf=requestAnimationFrame(animateHeroScrub);
+}
+
 function animateHeroScrub(now){
-  // Mobile usa uma interpolação bem mais lenta para impedir que
-  // um único swipe avance vários segundos do vídeo.
   const visualEase=isMobileViewport.matches ? 0.045 : 0.08;
-  const videoEase=isMobileViewport.matches ? 0.055 : 0.10;
+  const videoEase=0.10;
 
   heroVisualProgress += (heroTargetProgress-heroVisualProgress)*visualEase;
   document.documentElement.style.setProperty('--hero-progress',heroVisualProgress.toFixed(4));
   if(progressBar) progressBar.style.height=`${heroVisualProgress*100}%`;
 
-  if(heroVideo && heroDuration){
+  if(isMobileViewport.matches){
+    preloadHeroMobileFrames();
+    drawHeroMobileFrame(1+heroVisualProgress*(HERO_MOBILE_FRAME_COUNT-1));
+  }else if(heroVideo && heroDuration){
     heroVirtualTime += (heroTargetTime-heroVirtualTime)*videoEase;
-
-    // Limit currentTime writes to about 30 fps to avoid browser seek thrashing.
     if(now-lastHeroSeek>30){
       const nextTime=clamp(heroVirtualTime,0,Math.max(heroDuration-.015,0));
       if(Math.abs(heroVideo.currentTime-nextTime)>.012){
-        heroVideo.currentTime=nextTime;
+        try{ heroVideo.currentTime=nextTime; }catch(e){}
       }
       lastHeroSeek=now;
     }
   }
 
   const progressMoving=Math.abs(heroTargetProgress-heroVisualProgress)>.0007;
-  const timeMoving=heroDuration && Math.abs(heroTargetTime-heroVirtualTime)>.006;
+  const timeMoving=!isMobileViewport.matches && heroDuration && Math.abs(heroTargetTime-heroVirtualTime)>.006;
 
   if(progressMoving || timeMoving){
     heroRaf=requestAnimationFrame(animateHeroScrub);
   }else{
     heroVisualProgress=heroTargetProgress;
-    heroVirtualTime=heroTargetTime;
+    if(!isMobileViewport.matches) heroVirtualTime=heroTargetTime;
     document.documentElement.style.setProperty('--hero-progress',heroVisualProgress.toFixed(4));
     if(progressBar) progressBar.style.height=`${heroVisualProgress*100}%`;
+    if(isMobileViewport.matches){
+      drawHeroMobileFrame(1+heroVisualProgress*(HERO_MOBILE_FRAME_COUNT-1));
+    }
     heroRaf=0;
   }
 }
 
 function initHeroVideo(){
-  if(!heroVideo) return;
-
+  if(!heroVideo || isMobileViewport.matches) return;
   const duration=Number(heroVideo.duration);
   if(!Number.isFinite(duration) || duration<=0) return;
 
@@ -118,19 +191,19 @@ function initHeroVideo(){
   heroTargetTime=heroTargetProgress*heroDuration;
   heroVirtualTime=heroTargetTime;
 
-  try{
-    heroVideo.currentTime=clamp(heroVirtualTime,0,Math.max(heroDuration-.015,0));
-  }catch(e){}
+  try{ heroVideo.currentTime=clamp(heroVirtualTime,0,Math.max(heroDuration-.015,0)); }catch(e){}
 
   document.documentElement.style.setProperty('--hero-progress',heroVisualProgress.toFixed(4));
   if(progressBar) progressBar.style.height=`${heroVisualProgress*100}%`;
-
-  // Garante que o scrub seja retomado mesmo se loadedmetadata
-  // tiver ocorrido antes do script ser executado.
   updateHeroTarget();
 }
 
-if(heroVideo){
+if(isMobileViewport.matches){
+  preloadHeroMobileFrames();
+  resizeHeroMobileCanvas();
+  loadHeroMobileFrame(1,true);
+  drawHeroMobileFrame(1);
+}else if(heroVideo){
   heroVideo.pause();
   heroVideo.muted=true;
   heroVideo.playsInline=true;
@@ -146,7 +219,11 @@ if(heroVideo){
 
 updateHeroTarget();
 window.addEventListener('scroll',updateHeroTarget,{passive:true});
-window.addEventListener('resize',updateHeroTarget);
+window.addEventListener('resize',()=>{
+  resizeHeroMobileCanvas();
+  heroCurrentMobileFrame=-1;
+  updateHeroTarget();
+});
 
 const reveals=document.querySelectorAll('.reveal');
 const observer=new IntersectionObserver((entries)=>{
@@ -431,6 +508,12 @@ function unlockScrollVideos(){
   if(scrollVideosUnlocked) return;
   scrollVideosUnlocked=true;
 
+  if(isMobileViewport.matches){
+    preloadHeroMobileFrames();
+    updateHeroTarget();
+    return;
+  }
+
   [heroVideo].forEach(video=>{
     if(!video) return;
 
@@ -487,6 +570,8 @@ document.addEventListener('visibilitychange',()=>{
 });
 window.addEventListener('orientationchange',()=>{
   setTimeout(()=>{
+    resizeHeroMobileCanvas();
+    heroCurrentMobileFrame=-1;
     updateHeroTarget();
     updateServicesTarget();
   },180);
