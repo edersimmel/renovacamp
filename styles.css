@@ -1396,3 +1396,26 @@ button,input,select,textarea{font:inherit}
     display:none !important;
   }
 }
+
+
+/* ===== FIX SERVIÇOS MOBILE — CANVAS VISÍVEL ===== */
+@media(max-width:900px){
+  .services-scroll-video,
+  .services-desktop-canvas{
+    display:none !important;
+  }
+
+  .services-mobile-canvas{
+    display:block !important;
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:95%;
+    height:auto;
+    max-width:none;
+    aspect-ratio:16 / 9;
+    transform:translate(-50%,-50%);
+    z-index:0;
+    pointer-events:none;
+  }
+}
